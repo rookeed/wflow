@@ -8,8 +8,15 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Стабильная подпись (Apple Development) — права TCC не слетают при пересборке.
-CODESIGN_ID="${CODESIGN_ID:-Apple Development: peristy@ya.ru (96Y79BLG84)}"
+# Подпись: если в связке есть сертификат Apple Development — используем его
+# (права TCC не слетают при пересборках). Иначе ad-hoc "-".
+# Свой сертификат: CODESIGN_ID="Apple Development: ..." bash build_app.sh
+if [ -z "${CODESIGN_ID:-}" ]; then
+  FOUND_ID=$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')
+  CODESIGN_ID="${FOUND_ID:--}"
+fi
+echo "→ подпись: $CODESIGN_ID"
 
 if ! command -v swift >/dev/null; then
   echo "Swift не найден. Установи Xcode или: xcode-select --install"
