@@ -1,0 +1,11 @@
+# python v1
+__pycache__/
+wheels/
+pyi/
+# swift v2
+v2-swift/.build/
+v2-swift/build/
+v2-swift/.swiftpm/
+# система и отладка
+.DS_Store
+/*.png
