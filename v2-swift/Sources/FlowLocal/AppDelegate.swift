@@ -42,26 +42,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Отладка: FL_LEVEL=1..4 включает подсистемы поэтапно (по умолчанию всё).
         let debugLevel = Int(ProcessInfo.processInfo.environment["FL_LEVEL"] ?? "99") ?? 99
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        setStatusIcon("hourglass")
-
-        let menu = NSMenu()
-        let openItem = NSMenuItem(title: "Открыть Flow Local…",
-                                  action: #selector(openDashboard), keyEquivalent: "o")
-        openItem.target = self
-        menu.addItem(openItem)
-        menu.addItem(.separator())
-        statusMenuItem.isEnabled = false
-        helpMenuItem.title = "\(cfg.hotkeyName): держать = говорить, тап = замок 🔒, ещё тап = стоп"
-        helpMenuItem.isEnabled = false
-        modelMenuItem.title = "Модель: \(cfg.model) (whisper.cpp / Metal)"
-        modelMenuItem.isEnabled = false
-        menu.addItem(statusMenuItem)
-        menu.addItem(helpMenuItem)
-        menu.addItem(modelMenuItem)
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        statusItem.menu = menu
+        makeStatusItem()
+        // Иногда macOS кладёт новый статус-айтем под системные часы —
+        // проверяем и пересоздаём, пока не встанет в нормальный слот.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.ensureStatusItemVisible()
+        }
+        // Смена мониторов/разрешения (в т.ч. Screen Sharing) двигает меню-бар —
+        // перепроверяем позицию.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                self?.ensureStatusItemVisible()
+            }
+        }
 
         guard debugLevel >= 2 else { return }
         suggestions = SuggestionCenter(store: store)
@@ -71,6 +66,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         overlay = Overlay()   // создаём один раз на main — без гонок при lazy-инициализации
         if cfg.showOverlay { overlay?.showIdle() }   // постоянный мини-бар
+        // Правый клик по мини-бару — то же меню, что в меню-баре
+        // (страховка, если иконку в баре потерял системный глюк).
+        overlay?.view.menuProvider = { [weak self] in
+            let menu = NSMenu()
+            let open = NSMenuItem(title: "Открыть Flow Local…",
+                                  action: #selector(AppDelegate.openDashboard), keyEquivalent: "")
+            open.target = self
+            menu.addItem(open)
+            menu.addItem(.separator())
+            menu.addItem(NSMenuItem(title: "Выйти из Flow Local",
+                                    action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+            return menu
+        }
         recorder = AudioRecorder(sampleRate: cfg.sampleRate)
         recorder.levelSink = { [weak self] v in
             self?.overlay?.view.pushLevel(v)   // запись в буфер потокобезопасна
@@ -121,6 +129,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - статус-айтем
+
+    private func makeStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        setStatusIcon(ready ? "mic" : "hourglass")
+
+        let menu = NSMenu()
+        let openItem = NSMenuItem(title: "Открыть Flow Local…",
+                                  action: #selector(openDashboard), keyEquivalent: "o")
+        openItem.target = self
+        menu.addItem(openItem)
+        menu.addItem(.separator())
+        statusMenuItem.isEnabled = false
+        helpMenuItem.title = "\(cfg.hotkeyName): держать = говорить, тап = замок 🔒, ещё тап = стоп"
+        helpMenuItem.isEnabled = false
+        modelMenuItem.title = "Модель: \(cfg.model) (whisper.cpp / Metal)"
+        modelMenuItem.isEnabled = false
+        menu.addItem(statusMenuItem)
+        menu.addItem(helpMenuItem)
+        menu.addItem(modelMenuItem)
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        statusItem.menu = menu
+    }
+
+    /// Если айтем оказался в зоне системных индикаторов (правые ~180 pt) —
+    /// пересоздаём: свежий айтем получает нормальный слот.
+    private func ensureStatusItemVisible(attempt: Int = 1) {
+        guard attempt <= 5 else {
+            log("status item: gave up after \(attempt - 1) attempts")
+            return
+        }
+        // После 2 неудач — переходим на emoji-тайтл (как v1): рисуется всегда.
+        if attempt == 3 && !useEmojiStatus {
+            log("status item: switching to emoji title fallback")
+            useEmojiStatus = true
+            setStatusIcon(lastStatusSymbol)
+        }
+        // Не пересоздаём айтем (removeStatusItem может бросить исключение AppKit),
+        // а прячем/показываем — система пересчитывает слот заново.
+        let retry: (String) -> Void = { [weak self] reason in
+            guard let self else { return }
+            let img = self.statusItem.button?.image != nil
+            let title = self.statusItem.button?.title ?? ""
+            log("status item: \(reason) img=\(img) title='\(title)', re-slotting (attempt \(attempt))")
+            self.statusItem.isVisible = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                self.statusItem.isVisible = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.ensureStatusItemVisible(attempt: attempt + 1)
+                }
+            }
+        }
+        guard let win = statusItem.button?.window else {
+            retry("no window yet")
+            return
+        }
+        let screen = (win.screen ?? NSScreen.main)?.frame ?? .zero
+        let f = win.frame
+        if f.maxX > screen.maxX - 180 || f.origin.x <= 1 || !win.isVisible {
+            retry("bad slot (x=\(Int(f.origin.x)), visible=\(win.isVisible))")
+        } else {
+            log("status item ok at x=\(Int(f.origin.x))")
+        }
+    }
+
     // MARK: - дашборд
 
     @objc private func openDashboard() {
@@ -156,7 +230,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - статус
     // Иконки — шаблонные SF Symbols (ч/б, сами адаптируются к тёмной/светлой теме).
 
+    /// true → рисуем emoji-тайтлом вместо SF Symbol (fallback, как в v1).
+    private var useEmojiStatus = false
+    private static let emojiFor: [String: String] = [
+        "hourglass": "⏳", "mic": "🎙", "mic.fill": "🔴", "waveform": "✍️",
+        "lock.fill": "🔒", "exclamationmark.triangle": "⚠️",
+    ]
+    private var lastStatusSymbol = "hourglass"
+
     private func setStatusIcon(_ symbolName: String) {
+        lastStatusSymbol = symbolName
+        if useEmojiStatus {
+            statusItem.button?.image = nil
+            statusItem.button?.title = AppDelegate.emojiFor[symbolName] ?? "🎙"
+            return
+        }
         let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Flow Local")
         img?.isTemplate = true
         statusItem.button?.image = img

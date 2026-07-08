@@ -18,6 +18,15 @@ func acquireSingleInstanceLock() -> Int32 {
 let _lockFD = acquireSingleInstanceLock()
 log("=== Flow Local v2 (Swift) start ===")
 
+// macOS может «переселить» наш пункт меню-бара в Пункт управления
+// (ключ VisibleCC) — тогда иконка пропадает из бара. Сбрасываем до запуска UI.
+for key in ["NSStatusItem VisibleCC Item-0", "NSStatusItem Visible Item-0"] {
+    if UserDefaults.standard.object(forKey: key) != nil {
+        log("resetting status item pref: \(key)")
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

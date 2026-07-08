@@ -60,6 +60,14 @@ final class WaveView: NSView {
         onDragEnd?()
     }
 
+    // ---- правый клик: меню приложения (дублирует меню-бар)
+    var menuProvider: (() -> NSMenu)?
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let menu = menuProvider?() else { return }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let w = bounds.width
         let h = bounds.height
