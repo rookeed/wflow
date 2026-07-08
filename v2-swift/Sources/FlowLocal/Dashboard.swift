@@ -99,14 +99,17 @@ final class DashboardController: NSWindowController, NSWindowDelegate {
 
     init(model: DashboardModel) {
         self.model = model
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 940, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false)
+        // NSHostingController (а не NSHostingView) — иначе SwiftUI не получает
+        // нативный unified-тулбар, материал сайдбара и системное выделение.
+        let host = NSHostingController(rootView: DashboardView(model: model))
+        let win = NSWindow(contentViewController: host)
         win.title = "Flow Local"
+        win.styleMask.insert([.closable, .miniaturizable, .resizable])
+        win.toolbarStyle = .unified
+        win.titlebarSeparatorStyle = .automatic
+        win.setContentSize(NSSize(width: 940, height: 620))
         win.center()
         win.isReleasedWhenClosed = false
-        win.contentView = NSHostingView(rootView: DashboardView(model: model))
         super.init(window: win)
         win.delegate = self
     }
