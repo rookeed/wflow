@@ -386,43 +386,122 @@ struct StatsView: View {
 
 struct DictView: View {
     @ObservedObject var model: DashboardModel
-    @State private var word = ""
-    @State private var misheard = ""
+    @State private var selection: Int64?
+    @State private var editing: DictRow?
+    @State private var adding = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Свои слова, имена и термины. «Ослышки» (через запятую) автоматически заменяются на правильное написание.")
+        VStack(spacing: 0) {
+            if model.dict.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "character.book.closed")
+                        .font(.system(size: 36)).foregroundColor(.secondary)
+                    Text("Добавь свои слова, имена и термины —\nмодель будет распознавать их правильно.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(model.dict, selection: $selection) { d in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(d.word)
+                        if !d.misheard.isEmpty {
+                            Text(d.misheard)
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                    .tag(d.id)
+                    .contextMenu {
+                        Button("Изменить…") { editing = d }
+                        Button("Удалить", role: .destructive) { delete(d.id) }
+                    }
+                    .onTapGesture(count: 2) { editing = d }
+                }
+                .listStyle(.inset(alternatesRowBackgrounds: true))
+            }
+            listFooter
+        }
+        .sheet(isPresented: $adding) {
+            DictEditSheet(title: "Новое слово", word: "", misheard: "") { w, m in
+                model.store.addDict(word: w, misheard: m)
+                model.reloadAll()
+            }
+        }
+        .sheet(item: $editing) { d in
+            DictEditSheet(title: "Изменить слово", word: d.word, misheard: d.misheard) { w, m in
+                model.store.updateDict(id: d.id, word: w, misheard: m)
+                model.reloadAll()
+            }
+        }
+        .navigationTitle("Словарь")
+    }
+
+    private var listFooter: some View {
+        HStack(spacing: 2) {
+            Button { adding = true } label: { Image(systemName: "plus") }
+                .help("Добавить слово")
+            Button {
+                if let sel = selection { delete(sel) }
+            } label: { Image(systemName: "minus") }
+                .disabled(selection == nil)
+                .help("Удалить выбранное")
+            Divider().frame(height: 14).padding(.horizontal, 4)
+            Button {
+                if let sel = selection, let d = model.dict.first(where: { $0.id == sel }) {
+                    editing = d
+                }
+            } label: { Image(systemName: "pencil") }
+                .disabled(selection == nil)
+                .help("Изменить (или двойной клик по строке)")
+            Spacer()
+            Text("Ослышки заменяются на правильное написание автоматически")
                 .font(.caption).foregroundColor(.secondary)
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func delete(_ id: Int64) {
+        model.store.deleteDict(id: id)
+        if selection == id { selection = nil }
+        model.reloadAll()
+    }
+}
+
+struct DictEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    @State var word: String
+    @State var misheard: String
+    let onSave: (String, String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title).font(.headline)
+            Form {
+                TextField("Слово:", text: $word, prompt: Text("Wispr Flow"))
+                TextField("Ослышки:", text: $misheard, prompt: Text("виспер флоу, виспр флов"))
+                Text("Несколько вариантов — через запятую")
+                    .font(.caption).foregroundColor(.secondary)
+            }
             HStack {
-                TextField("Слово (напр. Wispr Flow)", text: $word)
-                TextField("Ослышки (напр. виспер флоу, виспр флов)", text: $misheard)
-                Button("Добавить") {
+                Spacer()
+                Button("Отмена") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Сохранить") {
                     let w = word.trimmingCharacters(in: .whitespaces)
                     guard !w.isEmpty else { return }
-                    model.store.addDict(word: w, misheard: misheard.trimmingCharacters(in: .whitespaces))
-                    word = ""; misheard = ""
-                    model.reloadAll()
+                    onSave(w, misheard.trimmingCharacters(in: .whitespaces))
+                    dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(word.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            List(model.dict) { d in
-                HStack {
-                    Text(d.word).bold()
-                    if !d.misheard.isEmpty {
-                        Text("← \(d.misheard)").foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button(role: .destructive) {
-                        model.store.deleteDict(id: d.id)
-                        model.reloadAll()
-                    } label: { Image(systemName: "trash") }
-                    .buttonStyle(.borderless)
-                }
-            }
-            .listStyle(.inset)
         }
-        .padding(16)
-        .navigationTitle("Словарь")
+        .padding(20)
+        .frame(width: 420)
     }
 }
 
@@ -430,43 +509,120 @@ struct DictView: View {
 
 struct SnippetsView: View {
     @ObservedObject var model: DashboardModel
-    @State private var trigger = ""
-    @State private var expansion = ""
+    @State private var selection: Int64?
+    @State private var editing: SnippetRow?
+    @State private var adding = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Скажи фразу-триггер — вставится готовый текст. Например: «моя подпись» → полная подпись.")
+        VStack(spacing: 0) {
+            if model.snippets.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "text.badge.plus")
+                        .font(.system(size: 36)).foregroundColor(.secondary)
+                    Text("Скажи фразу-триггер — вставится готовый текст.\nНапример: «моя подпись» → полная подпись.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(model.snippets, selection: $selection) { s in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.trigger)
+                        Text(s.expansion)
+                            .font(.caption).foregroundColor(.secondary).lineLimit(2)
+                    }
+                    .padding(.vertical, 3)
+                    .tag(s.id)
+                    .contextMenu {
+                        Button("Изменить…") { editing = s }
+                        Button("Удалить", role: .destructive) { delete(s.id) }
+                    }
+                    .onTapGesture(count: 2) { editing = s }
+                }
+                .listStyle(.inset(alternatesRowBackgrounds: true))
+            }
+            listFooter
+        }
+        .sheet(isPresented: $adding) {
+            SnippetEditSheet(title: "Новый сниппет", trigger: "", expansion: "") { t, e in
+                model.store.addSnippet(trigger: t, expansion: e)
+                model.reloadAll()
+            }
+        }
+        .sheet(item: $editing) { s in
+            SnippetEditSheet(title: "Изменить сниппет", trigger: s.trigger, expansion: s.expansion) { t, e in
+                model.store.updateSnippet(id: s.id, trigger: t, expansion: e)
+                model.reloadAll()
+            }
+        }
+        .navigationTitle("Сниппеты")
+    }
+
+    private var listFooter: some View {
+        HStack(spacing: 2) {
+            Button { adding = true } label: { Image(systemName: "plus") }
+                .help("Добавить сниппет")
+            Button {
+                if let sel = selection { delete(sel) }
+            } label: { Image(systemName: "minus") }
+                .disabled(selection == nil)
+                .help("Удалить выбранное")
+            Divider().frame(height: 14).padding(.horizontal, 4)
+            Button {
+                if let sel = selection, let s = model.snippets.first(where: { $0.id == sel }) {
+                    editing = s
+                }
+            } label: { Image(systemName: "pencil") }
+                .disabled(selection == nil)
+                .help("Изменить (или двойной клик по строке)")
+            Spacer()
+            Text("Триггер должен совпадать со сказанной фразой целиком")
                 .font(.caption).foregroundColor(.secondary)
-            HStack(alignment: .top) {
-                TextField("Фраза-триггер", text: $trigger)
-                    .frame(width: 220)
-                TextField("Текст для вставки", text: $expansion, axis: .vertical)
-                    .lineLimit(1...4)
-                Button("Добавить") {
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func delete(_ id: Int64) {
+        model.store.deleteSnippet(id: id)
+        if selection == id { selection = nil }
+        model.reloadAll()
+    }
+}
+
+struct SnippetEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    @State var trigger: String
+    @State var expansion: String
+    let onSave: (String, String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title).font(.headline)
+            TextField("Фраза-триггер:", text: $trigger, prompt: Text("моя подпись"))
+            Text("Текст для вставки:").font(.caption).foregroundColor(.secondary)
+            TextEditor(text: $expansion)
+                .font(.body)
+                .frame(height: 110)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor)))
+            HStack {
+                Spacer()
+                Button("Отмена") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Сохранить") {
                     let t = trigger.trimmingCharacters(in: .whitespaces)
                     guard !t.isEmpty, !expansion.isEmpty else { return }
-                    model.store.addSnippet(trigger: t, expansion: expansion)
-                    trigger = ""; expansion = ""
-                    model.reloadAll()
+                    onSave(t, expansion)
+                    dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(trigger.trimmingCharacters(in: .whitespaces).isEmpty || expansion.isEmpty)
             }
-            List(model.snippets) { s in
-                HStack(alignment: .top) {
-                    Text(s.trigger).bold().frame(width: 200, alignment: .leading)
-                    Text(s.expansion).foregroundColor(.secondary).lineLimit(3)
-                    Spacer()
-                    Button(role: .destructive) {
-                        model.store.deleteSnippet(id: s.id)
-                        model.reloadAll()
-                    } label: { Image(systemName: "trash") }
-                    .buttonStyle(.borderless)
-                }
-            }
-            .listStyle(.inset)
         }
-        .padding(16)
-        .navigationTitle("Сниппеты")
+        .padding(20)
+        .frame(width: 460)
     }
 }
 

@@ -236,6 +236,20 @@ extension Store {
         }
     }
 
+    func updateDict(id: Int64, word: String, misheard: String) {
+        storeQueue.sync {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(dbHandle,
+                "UPDATE dictionary SET word = ?, misheard = ? WHERE id = ?",
+                -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, word, -1, SQLITE_TRANSIENT2)
+            sqlite3_bind_text(stmt, 2, misheard, -1, SQLITE_TRANSIENT2)
+            sqlite3_bind_int64(stmt, 3, id)
+            sqlite3_step(stmt)
+        }
+    }
+
     func deleteDict(id: Int64) {
         storeQueue.sync {
             var stmt: OpaquePointer?
@@ -274,6 +288,20 @@ extension Store {
             sqlite3_bind_text(stmt, 1, trigger, -1, SQLITE_TRANSIENT2)
             sqlite3_bind_text(stmt, 2, expansion, -1, SQLITE_TRANSIENT2)
             sqlite3_bind_double(stmt, 3, Date().timeIntervalSince1970)
+            sqlite3_step(stmt)
+        }
+    }
+
+    func updateSnippet(id: Int64, trigger: String, expansion: String) {
+        storeQueue.sync {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(dbHandle,
+                "UPDATE snippets SET trigger = ?, expansion = ? WHERE id = ?",
+                -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, trigger, -1, SQLITE_TRANSIENT2)
+            sqlite3_bind_text(stmt, 2, expansion, -1, SQLITE_TRANSIENT2)
+            sqlite3_bind_int64(stmt, 3, id)
             sqlite3_step(stmt)
         }
     }
