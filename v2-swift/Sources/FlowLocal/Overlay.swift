@@ -31,28 +31,31 @@ final class WaveView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let w = bounds.width
         let h = bounds.height
-        // фон рисует NSVisualEffectView под нами (liquid glass), здесь только контент
+        // фон рисует NSVisualEffectView под нами, здесь только контент
         phase += 0.25
 
+        // адаптивный цвет контента: тёмный на светлой теме, светлый на тёмной
+        let ink = NSColor.labelColor
+
         // левый значок
-        let iconCX: CGFloat = 30, iconCY = h / 2
+        let iconCX: CGFloat = 20, iconCY = h / 2
         switch mode {
         case .locked:
-            drawText("🔒", x: iconCX - 10, y: iconCY - 9, size: 15)
+            drawSymbol("lock.fill", color: ink, cx: iconCX, cy: iconCY)
         case .busy:
-            drawText("✍️", x: iconCX - 10, y: iconCY - 9, size: 15)
+            drawSymbol("waveform", color: ink, cx: iconCX, cy: iconCY)
         case .record:
             let pulse = CGFloat(0.55 + 0.45 * abs(sin(phase * 0.5)))
-            NSColor(calibratedRed: 1.0, green: 0.23, blue: 0.19, alpha: pulse).setFill()
-            NSBezierPath(ovalIn: NSRect(x: iconCX - 6, y: iconCY - 6, width: 12, height: 12)).fill()
+            NSColor.systemRed.withAlphaComponent(pulse).setFill()
+            NSBezierPath(ovalIn: NSRect(x: iconCX - 5, y: iconCY - 5, width: 10, height: 10)).fill()
         }
 
         // waveform
-        let barsX0: CGFloat = 52
-        let barsX1: CGFloat = mode == .busy ? w - 16 : w - 96
+        let barsX0: CGFloat = 38
+        let barsX1: CGFloat = w - 16
         let step = (barsX1 - barsX0) / CGFloat(nBars)
         let bw = max(2.0, step * 0.55)
-        NSColor(calibratedWhite: 0.95, alpha: 0.95).setFill()
+        ink.withAlphaComponent(0.85).setFill()
 
         levelsLock.lock()
         let snapshot = levels
@@ -65,37 +68,31 @@ final class WaveView: NSView {
             } else {
                 lv = CGFloat(snapshot[i])
             }
-            let bh = 3.0 + lv * (h - 18.0)
+            let bh = 2.5 + lv * (h - 14.0)
             let x = barsX0 + CGFloat(i) * step
             let y = (h - bh) / 2
             NSBezierPath(roundedRect: NSRect(x: x, y: y, width: bw, height: bh),
                          xRadius: bw / 2, yRadius: bw / 2).fill()
         }
-
-        // подсказка справа
-        switch mode {
-        case .locked:
-            drawText("\(Config.shared.hotkeyName) — стоп", x: w - 86, y: h / 2 - 7, size: 11, grey: true)
-        case .record:
-            drawText("тап = 🔒", x: w - 86, y: h / 2 - 7, size: 11, grey: true)
-        case .busy:
-            break
-        }
     }
 
-    private func drawText(_ s: String, x: CGFloat, y: CGFloat, size: CGFloat, grey: Bool = false) {
-        let color = grey ? NSColor(calibratedWhite: 0.7, alpha: 0.9) : NSColor.white
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: size),
-            .foregroundColor: color,
-        ]
-        (s as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+    private func drawSymbol(_ name: String, color: NSColor, cx: CGFloat, cy: CGFloat) {
+        guard let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold)) else { return }
+        let tinted = NSImage(size: img.size, flipped: false) { rect in
+            img.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        tinted.draw(in: NSRect(x: cx - img.size.width / 2, y: cy - img.size.height / 2,
+                               width: img.size.width, height: img.size.height))
     }
 }
 
 final class Overlay {
-    static let width: CGFloat = 320
-    static let height: CGFloat = 46
+    static let width: CGFloat = 240
+    static let height: CGFloat = 34
 
     private let panel: NSPanel
     let view: WaveView
@@ -119,7 +116,7 @@ final class Overlay {
         // Пилл из «жидкого стекла»: тёмный HUD-материал с блюром фона.
         let frame = NSRect(x: 0, y: 0, width: Overlay.width, height: Overlay.height)
         let blur = NSVisualEffectView(frame: frame)
-        blur.material = .hudWindow
+        blur.material = .popover          // адаптивный: светлый/тёмный по теме системы
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.wantsLayer = true
@@ -127,7 +124,7 @@ final class Overlay {
         blur.layer?.cornerCurve = .continuous
         blur.layer?.masksToBounds = true
         blur.layer?.borderWidth = 0.5
-        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        blur.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
 
         view = WaveView(frame: frame)
         view.autoresizingMask = [.width, .height]
