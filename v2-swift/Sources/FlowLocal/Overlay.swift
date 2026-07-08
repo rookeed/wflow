@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Постоянный мини-бар (как Flow Bar у Wispr):
 ///  - всегда на экране: тонкая полупрозрачная капсула
@@ -136,15 +137,64 @@ final class WaveView: NSView {
     }
 }
 
+/// Модель карточки результата (когда вставлять некуда).
+final class OverlayResultModel: ObservableObject {
+    @Published var text = ""
+    @Published var copied = false
+    var onCopy: () -> Void = {}
+    var onClose: () -> Void = {}
+}
+
+/// Контент карточки — фон даёт NSVisualEffectView панели, тут только контролы.
+struct OverlayResultView: View {
+    @ObservedObject var model: OverlayResultModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "text.cursor").font(.caption).foregroundColor(.secondary)
+                Text("Курсор не в поле ввода").font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Button { model.onClose() } label: {
+                    Image(systemName: "xmark").font(.caption2).foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+            }
+            ScrollView {
+                Text(model.text)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack {
+                Spacer()
+                Button { model.onCopy() } label: {
+                    Label(model.copied ? "Скопировано" : "Скопировать",
+                          systemImage: model.copied ? "checkmark" : "doc.on.doc")
+                        .font(.callout)
+                }
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(12)
+    }
+}
+
 final class Overlay {
     static let idleW: CGFloat = 68, idleH: CGFloat = 12
     static let activeW: CGFloat = 240, activeH: CGFloat = 34
+    static let resultW: CGFloat = 400, resultH: CGFloat = 150
 
     private let panel: NSPanel
     private let blur: NSVisualEffectView
     let view: WaveView
     private var timer: Timer?
     private(set) var expanded = false
+    private let resultModel = OverlayResultModel()
+    private var resultHost: NSHostingView<OverlayResultView>?
+    private var resultTimer: Timer?
 
     // позиция: центр X и нижняя кромка (общая для мини и раскрытого)
     private var cx: CGFloat
@@ -224,19 +274,68 @@ final class Overlay {
         view.mode = mode
     }
 
+    /// Раскрыться из пилла в карточку с текстом и кнопкой «Скопировать»
+    /// (когда вставлять некуда).
+    func showResult(_ text: String) {
+        timer?.invalidate(); timer = nil
+        expanded = true
+        if resultHost == nil {
+            let host = NSHostingView(rootView: OverlayResultView(model: resultModel))
+            host.autoresizingMask = [.width, .height]
+            host.frame = blur.bounds
+            blur.addSubview(host)
+            resultHost = host
+        }
+        resultModel.text = text
+        resultModel.copied = false
+        resultModel.onCopy = { [weak self] in
+            guard let self else { return }
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(self.resultModel.text, forType: .string)
+            self.resultModel.copied = true
+            playSound("Glass")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.collapse() }
+        }
+        resultModel.onClose = { [weak self] in self?.collapse() }
+
+        view.isHidden = true
+        resultHost?.isHidden = false
+        panel.orderFrontRegardless()
+        blur.layer?.cornerRadius = 16
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1.0
+            panel.animator().setFrame(resultFrame(), display: true)
+        }
+        resultTimer?.invalidate()
+        resultTimer = Timer(timeInterval: 60, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async { self?.collapse() }
+        }
+        RunLoop.main.add(resultTimer!, forMode: .common)
+    }
+
     /// Свернуться обратно в мини-бар.
     func collapse() {
         timer?.invalidate()
         timer = nil
+        resultTimer?.invalidate()
+        resultTimer = nil
         expanded = false
         view.mode = .idle
+        view.isHidden = false
+        resultHost?.isHidden = true
         blur.layer?.cornerRadius = Overlay.idleH / 2
-        NSAnimationContext.runAnimationGroup { ctx in
+        NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.2
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0.55
             panel.animator().setFrame(idleFrame(), display: true)
-        }
+        }, completionHandler: { [weak self] in
+            // если индикатор выключен в настройках — после карточки прячемся совсем
+            if !Config.shared.showOverlay { self?.panel.orderOut(nil) }
+        })
     }
 
     /// Полностью скрыть/показать (настройка «Индикатор записи»).
@@ -250,6 +349,14 @@ final class Overlay {
 
     private func activeFrame() -> NSRect {
         NSRect(x: cx - Overlay.activeW / 2, y: bottom, width: Overlay.activeW, height: Overlay.activeH)
+    }
+
+    private func resultFrame() -> NSRect {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        var x = cx - Overlay.resultW / 2
+        x = min(max(x, screen.minX + 8), screen.maxX - Overlay.resultW - 8)
+        let y = min(bottom, screen.maxY - Overlay.resultH - 8)
+        return NSRect(x: x, y: y, width: Overlay.resultW, height: Overlay.resultH)
     }
 
     /// После перетаскивания: запомнить новую позицию.

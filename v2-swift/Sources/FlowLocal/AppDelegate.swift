@@ -23,7 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dashboard: DashboardController?
     private var suggestions: SuggestionCenter!
     private var axWatcher: AXCorrectionWatcher!
-    private var resultPanel = ResultPanel()
     // для детекта передиктовки
     private var lastDictation: (text: String, ts: TimeInterval)?
 
@@ -312,24 +311,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var text = transcriber.transcribe(audio, initialPrompt: prompt)
         text = postprocess(text, store: store)
         let dt = Date().timeIntervalSince(t0)
-        overlayHide()
 
         if text.isEmpty {
+            overlayHide()
             setStatus("mic", "Пусто — ничего не расслышал.")
             return
         }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if FocusCheck.focusIsEditable() {
+                self.overlay?.collapse()
                 Paster.paste(text)
                 // Через секунду (текст уже в поле) — начать следить за правками.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     self.axWatcher.watch(pastedText: text)
                 }
             } else {
-                // Вставлять некуда — показываем плашку с кнопкой копирования.
-                log("focus not editable — showing result panel")
-                self.resultPanel.show(text)
+                // Вставлять некуда — пилл раскрывается в карточку с текстом.
+                log("focus not editable — morphing pill into result card")
+                self.overlay?.showResult(text)
             }
         }
         // Детект передиктовки: похожая фраза в течение 3 минут → предложить разницу.
