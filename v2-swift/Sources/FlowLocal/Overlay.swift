@@ -31,13 +31,7 @@ final class WaveView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let w = bounds.width
         let h = bounds.height
-
-        // фон-пилл
-        let pill = NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: w, height: h),
-                                xRadius: h / 2, yRadius: h / 2)
-        NSColor(calibratedWhite: 0.07, alpha: 0.93).setFill()
-        pill.fill()
-
+        // фон рисует NSVisualEffectView под нами (liquid glass), здесь только контент
         phase += 0.25
 
         // левый значок
@@ -117,11 +111,28 @@ final class Overlay {
         panel.level = .statusBar
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        panel.hasShadow = true
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces]
-        view = WaveView(frame: NSRect(x: 0, y: 0, width: Overlay.width, height: Overlay.height))
-        panel.contentView = view
+
+        // Пилл из «жидкого стекла»: тёмный HUD-материал с блюром фона.
+        let frame = NSRect(x: 0, y: 0, width: Overlay.width, height: Overlay.height)
+        let blur = NSVisualEffectView(frame: frame)
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = Overlay.height / 2
+        blur.layer?.cornerCurve = .continuous
+        blur.layer?.masksToBounds = true
+        blur.layer?.borderWidth = 0.5
+        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
+
+        view = WaveView(frame: frame)
+        view.autoresizingMask = [.width, .height]
+        blur.addSubview(view)
+        panel.contentView = blur
     }
 
     func show(_ mode: OverlayMode) {
@@ -134,7 +145,12 @@ final class Overlay {
             RunLoop.main.add(t, forMode: .common)   // анимация живёт и при открытом меню
             timer = t
         }
+        panel.alphaValue = 0
         panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            panel.animator().alphaValue = 1
+        }
     }
 
     func setMode(_ mode: OverlayMode) {
@@ -144,6 +160,12 @@ final class Overlay {
     func hide() {
         timer?.invalidate()
         timer = nil
-        panel.orderOut(nil)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            self?.panel.orderOut(nil)
+            self?.panel.alphaValue = 1
+        })
     }
 }

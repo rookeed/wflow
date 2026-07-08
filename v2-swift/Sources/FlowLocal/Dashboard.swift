@@ -155,6 +155,7 @@ struct DashboardView: View {
             List(DashSection.allCases, selection: $section) { s in
                 Label(s.rawValue, systemImage: s.icon).tag(s)
             }
+            .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
             switch section {
@@ -183,32 +184,33 @@ struct HistoryView: View {
     }()
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-                TextField("Поиск по тексту…", text: $model.search)
-                    .textFieldStyle(.plain)
-            }
-            .padding(10)
-            .background(Color.gray.opacity(0.12))
-
+        Group {
             if model.history.isEmpty {
-                Spacer()
-                Text(model.search.isEmpty ? "Пока нет диктовок — зажми клавишу и говори."
-                                          : "Ничего не найдено.")
-                    .foregroundColor(.secondary)
-                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: model.search.isEmpty ? "mic" : "magnifyingglass")
+                        .font(.system(size: 36)).foregroundColor(.secondary)
+                    Text(model.search.isEmpty ? "Пока нет диктовок — зажми клавишу и говори."
+                                              : "Ничего не найдено.")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(model.history) { row in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
                             Text(Self.fmt.string(from: Date(timeIntervalSince1970: row.ts)))
                                 .font(.caption).foregroundColor(.secondary)
+                                .monospacedDigit()
                             if !row.app.isEmpty {
-                                Text("→ \(row.app)").font(.caption).foregroundColor(.secondary)
+                                Text(row.app)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 7).padding(.vertical, 2)
+                                    .background(Capsule().fill(Color(nsColor: .quaternaryLabelColor)))
+                                    .foregroundColor(.secondary)
                             }
                             if row.wpm > 0 {
-                                Text("\(Int(row.wpm)) слов/мин").font(.caption).foregroundColor(.secondary)
+                                Text("\(Int(row.wpm)) слов/мин")
+                                    .font(.caption2).foregroundColor(Color(nsColor: .tertiaryLabelColor))
                             }
                             Spacer()
                             Button { editingRow = row } label: {
@@ -228,12 +230,14 @@ struct HistoryView: View {
                             .help("Удалить")
                         }
                         Text(row.text).textSelection(.enabled)
+                            .lineSpacing(2)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                 }
-                .listStyle(.inset)
+                .listStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
+        .searchable(text: $model.search, placement: .toolbar, prompt: "Поиск по тексту")
         .sheet(item: $editingRow) { row in
             HistoryEditSheet(model: model, row: row) { editingRow = nil }
         }
@@ -325,10 +329,10 @@ struct StatsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 12) {
-                    statCard("Всего слов", "\(model.totals.words)")
-                    statCard("Диктовок", "\(model.totals.dictations)")
-                    statCard("Средний темп", model.totals.avgWpm > 0 ? "\(Int(model.totals.avgWpm)) слов/мин" : "—")
-                    statCard("Серия", model.totals.streakDays > 0 ? "\(model.totals.streakDays) дн." : "—")
+                    statCard("Всего слов", "\(model.totals.words)", icon: "text.word.spacing")
+                    statCard("Диктовок", "\(model.totals.dictations)", icon: "mic")
+                    statCard("Средний темп", model.totals.avgWpm > 0 ? "\(Int(model.totals.avgWpm)) сл/мин" : "—", icon: "speedometer")
+                    statCard("Серия", model.totals.streakDays > 0 ? "\(model.totals.streakDays) дн." : "—", icon: "flame")
                 }
 
                 Text("Слова за 14 дней").font(.headline)
@@ -362,14 +366,19 @@ struct StatsView: View {
         .navigationTitle("Статистика")
     }
 
-    private func statCard(_ title: String, _ value: String) -> some View {
+    private func statCard(_ title: String, _ value: String, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundColor(.secondary)
-            Text(value).font(.title2).bold()
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.caption).foregroundColor(.accentColor)
+                Text(title).font(.caption).foregroundColor(.secondary)
+            }
+            Text(value).font(.title2).bold().monospacedDigit()
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.gray.opacity(0.12)))
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .quaternaryLabelColor)))
     }
 }
 

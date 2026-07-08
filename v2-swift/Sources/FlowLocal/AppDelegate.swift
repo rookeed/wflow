@@ -123,6 +123,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - дашборд
 
     @objc private func openDashboard() {
+        // async: даём меню закончить трекинг, иначе первый клик после
+        // запуска съедается и окно не показывается
+        DispatchQueue.main.async { [weak self] in self?.doOpenDashboard() }
+    }
+
+    private func doOpenDashboard() {
         if dashboard == nil {
             let model = DashboardModel(
                 store: store,

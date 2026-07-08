@@ -57,6 +57,7 @@ final class SuggestionCenter: ObservableObject {
             p.level = .statusBar
             p.isOpaque = false
             p.backgroundColor = .clear
+            p.hasShadow = true
             p.hidesOnDeactivate = false
             p.collectionBehavior = [.canJoinAllSpaces]
             p.contentView = NSHostingView(rootView: SuggestionView(center: self))
@@ -111,8 +112,9 @@ struct SuggestionView: View {
         }
         .padding(14)
         .frame(width: 380, height: 160, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.25)))
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
     }
 }
 
