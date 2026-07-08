@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         overlay = Overlay()   // создаём один раз на main — без гонок при lazy-инициализации
+        if cfg.showOverlay { overlay?.showIdle() }   // постоянный мини-бар
         recorder = AudioRecorder(sampleRate: cfg.sampleRate)
         recorder.levelSink = { [weak self] v in
             self?.overlay?.view.pushLevel(v)   // запись в буфер потокобезопасна
@@ -134,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 store: store,
                 applyLive: { [weak self] in
                     self?.transcriber.language = Config.shared.language
+                    self?.overlay?.setVisible(Config.shared.showOverlay)
                 },
                 restart: { [weak self] in self?.restartApp() })
             dashboard = DashboardController(model: model)
@@ -176,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func overlayShow(_ mode: OverlayMode) {
         guard cfg.showOverlay else { return }
-        DispatchQueue.main.async { [weak self] in self?.overlay?.show(mode) }
+        DispatchQueue.main.async { [weak self] in self?.overlay?.expand(mode) }
     }
 
     private func overlayMode(_ mode: OverlayMode) {
@@ -185,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func overlayHide() {
-        DispatchQueue.main.async { [weak self] in self?.overlay?.hide() }
+        DispatchQueue.main.async { [weak self] in self?.overlay?.collapse() }
     }
 
     // MARK: - хоткей (tap-поток; только флаги и очередь)

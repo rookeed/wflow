@@ -42,6 +42,9 @@ final class Config {
     var showOverlay = true
     var saveHistory = true
     var userName = ""
+    // позиция мини-бара (центр X и нижняя кромка); nil = по умолчанию
+    var overlayCX: Double?
+    var overlayBottom: Double?
 
     static let shared = Config()
 
@@ -62,6 +65,8 @@ final class Config {
         if let v = obj["show_overlay"] as? Bool { showOverlay = v }
         if let v = obj["save_history"] as? Bool { saveHistory = v }
         if let v = obj["user_name"] as? String { userName = v }
+        overlayCX = obj["overlay_cx"] as? Double
+        overlayBottom = obj["overlay_bottom"] as? Double
     }
 
     func save() {
@@ -76,6 +81,8 @@ final class Config {
             "show_overlay": showOverlay,
             "save_history": saveHistory,
             "user_name": userName,
+            "overlay_cx": overlayCX,
+            "overlay_bottom": overlayBottom,
         ]
         if let data = try? JSONSerialization.data(
             withJSONObject: obj as [String: Any], options: [.prettyPrinted, .sortedKeys]) {
