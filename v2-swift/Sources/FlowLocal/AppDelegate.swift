@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dashboard: DashboardController?
     private var suggestions: SuggestionCenter!
     private var axWatcher: AXCorrectionWatcher!
+    private var resultPanel = ResultPanel()
     // для детекта передиктовки
     private var lastDictation: (text: String, ts: TimeInterval)?
 
@@ -318,10 +319,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         DispatchQueue.main.async { [weak self] in
-            Paster.paste(text)
-            // Через секунду (текст уже в поле) — начать следить за правками.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self?.axWatcher.watch(pastedText: text)
+            guard let self else { return }
+            if FocusCheck.focusIsEditable() {
+                Paster.paste(text)
+                // Через секунду (текст уже в поле) — начать следить за правками.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.axWatcher.watch(pastedText: text)
+                }
+            } else {
+                // Вставлять некуда — показываем плашку с кнопкой копирования.
+                log("focus not editable — showing result panel")
+                self.resultPanel.show(text)
             }
         }
         // Детект передиктовки: похожая фраза в течение 3 минут → предложить разницу.
