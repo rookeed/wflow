@@ -156,7 +156,9 @@ struct DashboardView: View {
     var body: some View {
         NavigationSplitView {
             List(DashSection.allCases, selection: $section) { s in
-                Label(s.rawValue, systemImage: s.icon).tag(s)
+                Label(s.rawValue, systemImage: s.icon)
+                    .tag(s)
+                    .listItemTint(.monochrome)   // серое выделение, как в Finder
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
